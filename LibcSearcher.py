@@ -4,7 +4,7 @@ from __future__ import print_function
 import os
 import re
 import sys
-
+import subprocess
 
 class LibcSearcher(object):
     def __init__(self, func=None, address=None):
@@ -115,8 +115,43 @@ class LibcSearcher(object):
         print("No matched, Make sure you supply a valid function name or just add more libc.")
         return 0
 
+    def get_libcbase(self):
+        if len(self.condition) <= 0: return
+        func = self.condition.keys()[0]
+        funcaddr = self.condition[func]
+        libcbase = funcaddr - self.dump(func)
+        return libcbase
+
+    def get_system_and_bin_sh(self):
+        # db = self.libc_database_path + self.db
+        libcbase = self.get_libcbase()
+        system = libcbase + self.dump('system')
+        str_bin_sh = libcbase + self.dump('str_bin_sh')
+        return (system, str_bin_sh)
+
+    def get_execve_and_bin_sh(self):
+        libcbase = self.get_libcbase()
+        system = libcbase + self.dump('execve')
+        str_bin_sh = libcbase + self.dump('str_bin_sh')
+        return (system, str_bin_sh)
+
+    def get_one_gadgets(self):
+        self.decided()
+        libc = os.path.splitext(self.db)[0] + '.so'
+        libc_path = self.libc_database_path + libc
+        libcbase = self.get_libcbase()
+        process = subprocess.Popen(["one_gadget", libc_path], stdout=subprocess.PIPE)
+        output = process.stdout.read().split('\n')
+        addressLs = []
+        for line in output:
+            if line.startswith('0x'):
+                addressLs.append(int(line.split()[0],16))
+        for i,gadget in enumerate(addressLs):
+            print("[+]one_gadget %d: %x (libc_base @%x)" % (i, gadget, libcbase))
+        return [libcbase + i for i in addressLs]
 
 if __name__ == "__main__":
     obj = LibcSearcher("fgets", 0x7ff39014bd90)
     print("[+]system  offset: ", hex(obj.dump("system")))
     print("[+]/bin/sh offset: ", hex(obj.dump("str_bin_sh")))
+    print("[+]one_gadgets:", repr(obj.get_one_gadgets()))
